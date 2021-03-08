@@ -10,25 +10,21 @@ import re
 import smtplib
 import ssl
 import subprocess
+import sys
 import tempfile
 
 from email.message import EmailMessage
 
-logging.basicConfig(level=logging.INFO)
-LOG = logging.getLogger(__name__)
-
+LOG = None
+LOG_FORMAT = '%(asctime)s | %(levelname)s | %(message)s'
 
 DEFAULT_MAX_TEMP = 25
 DEFAULT_LOG_FILE = '/var/log/ipmi-check-temperature.log'
 DEFAULT_LASTNOTIFY_FILE = '/tmp/ipmi-check-temperature.last-notification.txt'
-DEFAULT_LASTNOTIFY_TIMEOUT = 60 * 10 # send max of 1 email every 10 mins
+DEFAULT_LASTNOTIFY_COOLDOWN = 60 * 10 # send max of 1 email every 10 mins
 IPMI_SDR_PREFIXES = [
     'Inlet Temp',
     'Ambient Temp',
-]
-
-NOTIFY_EMAILS = [
-    'ian.sillitoe@googlemail.com',
 ]
 
 EMAIL_HOST = 'localhost'
@@ -46,20 +42,26 @@ Last few lines of temperature log:
 """
 
 
+ACTION_SEND_NOTIFICATION = "NOTIFY"
+ACTION_NO_NOTIFICATION_MISSING_EMAIL = "NO_NOTIFY_MISSING_EMAIL"
+ACTION_NO_NOTIFICATION_COOLDOWN = "NO_NOTIFY_COOLDOWN"
+
+
 parser = argparse.ArgumentParser(description='Check ambient temperature on this machine')
 parser.add_argument('--maxtemp', dest='max_temp', type=int, default=DEFAULT_MAX_TEMP,
                     help=f'maximum temperature before sending notification (default: {DEFAULT_MAX_TEMP})')
 parser.add_argument('--log', dest='log_file', type=str, default=DEFAULT_LOG_FILE,
                     help=f'log file to record temperatures (default: {DEFAULT_LOG_FILE})')
+parser.add_argument('--email', dest='notify_emails', type=str, action='append',
+                    help=f'email address(es) to send notification')
+parser.add_argument('--cooldown', dest='notify_cooldown', type=int, default=DEFAULT_LASTNOTIFY_COOLDOWN,
+                    help=f'second to wait before sending another notification (default: {DEFAULT_LASTNOTIFY_COOLDOWN})')
 parser.add_argument('--notifyfile', dest='notify_file', type=str, default=DEFAULT_LASTNOTIFY_FILE,
                     help=f'file to record the last notification (default: {DEFAULT_LASTNOTIFY_FILE})')
-parser.add_argument('--notifytimeout', dest='notify_timeout', type=int, default=DEFAULT_LASTNOTIFY_TIMEOUT,
-                    help=f'second to wait before sending another notification (default: {DEFAULT_LASTNOTIFY_TIMEOUT})')
 
 
-def run(*, max_temp, log_file, notify_file, notify_timeout):
+def run(*, max_temp, log_file, notify_file, notify_cooldown, notify_emails):
     """Checks temperature and sends notification if necessary"""
-
 
     current_temp = get_temperature()
 
@@ -78,37 +80,44 @@ def run(*, max_temp, log_file, notify_file, notify_timeout):
         pass
 
     now = datetime.datetime.now()
-    seconds_until_next_notification = notify_timeout - (now.timestamp() - last_notification)
+    seconds_until_next_notification = notify_cooldown - (now.timestamp() - last_notification)
     
-    timeout_flag = False
-    if seconds_until_next_notification < 0:
-        timeout_flag = True
+    action = None
+    if warning_state:
+        if seconds_until_next_notification < 0:
+            if notify_emails:
+                LOG.info(f"Warning state: sending notification")
+                action = ACTION_SEND_NOTIFICATION
+            else:
+                LOG.info(f"Warning state: NOT sending notification (no notify emails specified)")
+                action = ACTION_NO_NOTIFICATION_MISSING_EMAIL
+        else:
+            LOG.info(f"Warning state: NOT sending notification (waiting {int(seconds_until_next_notification)}s for cooldown)")
+            action = ACTION_NO_NOTIFICATION_COOLDOWN
+
+    if action == ACTION_SEND_NOTIFICATION:
+        send_email_notification(log_file=log_file, 
+                                notify_file=notify_file, 
+                                notify_emails=notify_emails, 
+                                current_temp=current_temp, 
+                                max_temp=max_temp)
 
     log_cols = [str(now),
                 str(current_temp), 
                 str(max_temp), 
                 "WARNING" if warning_state else '-',
-                "TIMEOUT_WAIT" if timeout_flag is False else '-',
-                str(last_notification) if last_notification else '-',]
-    
+                action if action is not None else '-',
+                str(int(seconds_until_next_notification)) if action == ACTION_NO_NOTIFICATION_COOLDOWN else '-',]
+
     with open(args.log_file, 'at') as fh:
         fh.write('\t'.join(log_cols) + "\n")
 
-    if warning_state:
-        if timeout_flag:
-            LOG.info(f"Warning state: sending notification")
-            send_email_notification(log_file, notify_file, current_temp, max_temp)
-        else:
-            LOG.info(f"Warning state: NOT sending notification (waiting {int(seconds_until_next_notification)}s for timeout)")
 
 
 
 
-
-
-def send_email_notification(log_file, notify_file, current_temp, max_temp):
+def send_email_notification(*, log_file, notify_file, notify_emails, current_temp, max_temp):
     """Sends email notification"""
-
 
     tmpl_args = {
         'hostname': platform.node(),
@@ -118,18 +127,16 @@ def send_email_notification(log_file, notify_file, current_temp, max_temp):
         'last_log_lines': get_last_lines(log_file),
     }
 
-
     email_content = EMAIL_TEMPLATE.format(**tmpl_args)
-
 
     msg = EmailMessage()
 
     msg.set_content(email_content)
     msg['Subject'] = EMAIL_SUBJECT.format(**tmpl_args)
     msg['From'] = EMAIL_FROM.format(**tmpl_args)
-    msg['To'] = ', '.join(NOTIFY_EMAILS)
+    msg['To'] = ', '.join(notify_emails)
 
-    LOG.info(f"Sending notification to {NOTIFY_EMAILS}")
+    LOG.info(f"Sending notification to {notify_emails}")
     with smtplib.SMTP(EMAIL_HOST) as s:
         s.send_message(msg)
 
@@ -139,7 +146,7 @@ def send_email_notification(log_file, notify_file, current_temp, max_temp):
 
 def get_temperature():
     """
-    Returns the temperature from ipmitool
+    Returns the temperature from `ipmitool sdr`
 
     ::
 
@@ -199,7 +206,31 @@ def get_last_lines(log_file, line_count=5):
     return result.stdout.splitlines()
 
 
+def setup_logger():
+    """Logs >= INFO to stdout; >= WARNING to stderr"""
+ 
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(logging.INFO)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.WARNING)
+
+    formatter = logging.Formatter(LOG_FORMAT)
+
+    stdout_handler.setFormatter(formatter)
+    stderr_handler.setFormatter(formatter)
+
+    logger.addHandler(stdout_handler)
+    logger.addHandler(stderr_handler)
+
+    return logger
+
+
 if __name__ == '__main__':
+    LOG = setup_logger()
     args = parser.parse_args()
     run(**(args.__dict__))
 
