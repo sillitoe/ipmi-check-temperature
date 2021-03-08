@@ -16,13 +16,13 @@ This script is only on GitHub to make my life easier - there are many reasons wh
 - it needs to be run as root (and you shouldn't be running random scripts as root)
 - there are almost certainly much better tested tools that exist already
 - it has been only been tested on a very limited set of machines
-- you may need to configure your smtp server to get emails work
+- you may need to configure your smtp server to get emails to work
 
 ## Why you might want to use this script
 
 - You already have an excellent monitoring system in place
-- You have looked at every line of code and are completely happy running this on your system
 - You want a simple script to act as a last resort record keeper and failover notification server
+- You have looked at every line of code and are completely happy running this on your system
 - You have confirmed that the email notifications are working on your system (see below)
 
 ## Requirements
