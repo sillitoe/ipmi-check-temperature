@@ -15,7 +15,6 @@ This script is only on GitHub to make my life easier - there are many reasons wh
 
 - it needs to be run as root (and you shouldn't be running random scripts as root)
 - there are almost certainly much better tested tools that exist already
-- you definitely should not trust the safety of your machines to this
 - it has been only been tested on a very limited set of machines
 - you may need to configure your smtp server to get emails work
 
