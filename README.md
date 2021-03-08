@@ -1,21 +1,30 @@
 # ipmi-check-temperature
 
-Simple python script that attempts to check the ambient room temperature (via ipmitools) then sends email notification if the temperature exceeds a maximum.
+Simple python script that attempts to check the ambient room temperature (via ipmitools) and send email notification if the temperature exceeds a maximum.
 
-## Why you should NOT use this script
+## What this does
+
+- parse `ipmitool sdr` to get the ambient temperature
+- keep a record of all readings
+- send a notification if the current temperature is over the maximum
+- ensure only one notification is sent in a given period (cooldown)
+
+## Why you probably do NOT want use this script
 
 This script is only on GitHub to make my life easier - there are many reasons why you should not use it.
 
 - it needs to be run as root (and you shouldn't be running random scripts as root)
-- there may well be much better tested tools that already exist
+- there are almost certainly much better tested tools that exist already
 - you definitely should not trust the safety of your machines to this
 - it has been only been tested on a very limited set of machines
+- you may need to configure your smtp server to get emails work
 
 ## Why you might want to use this script
 
 - You already have an excellent monitoring system in place
-- You want a simple script as a last resort failover 
 - You have looked at every line of code and are completely happy running this on your system
+- You want a simple script to act as a last resort record keeper and failover notification server
+- You have confirmed that the email notifications are working on your system (see below)
 
 ## Requirements
 
@@ -25,7 +34,7 @@ yum install OpenIPMI ipmitools
 
 ## Run
 
-This script is intended to be run in the root crontab. It will direct all info messages (and above) to STDOUT and all warnings (and above) to STDERR, so a typical usage might look like:
+This script is intended to be run in the root crontab. It will direct all info messages (and above) to STDOUT and all warnings (and above) to STDERR, so a typical cron entry might look like:
 
 ```
 */5 * * * * /usr/bin/python3 ipmi-check-temperature.py --maxtemp 25 --email name1@server.com >> /dev/null
@@ -50,7 +59,7 @@ $ sudo python3 ipmi-check-temperature.py --maxtemp 25
 2021-03-08 22:48:19,366 | INFO | Current temp is 16 (max 25)   [OKAY]
 ```
 
-Simulating overheating event
+Simulating an overheating event (without email)
 
 ```
 $ sudo python3 ipmi-check-temperature.py --maxtemp 10
@@ -58,7 +67,7 @@ $ sudo python3 ipmi-check-temperature.py --maxtemp 10
 2021-03-08 22:52:07,078 | INFO | Warning state: NOT sending notification (no notify emails specified)
 ```
 
-Similating overheating event (with notification)
+Similating an overheating event (test email notification)
 
 ```
 $ sudo python3 ipmi-check-temperature.py --maxtemp 10 --email name1@server.com --email name2@server.com
@@ -68,7 +77,7 @@ $ sudo python3 ipmi-check-temperature.py --maxtemp 10 --email name1@server.com -
 2021-03-08 22:53:46,603 | INFO | Touching notify file /tmp/ipmi-check-temperature.last-notification.txt
 ```
 
-Similating overheating event (within the 'cooldown' period)
+Similating an overheating event (test 'cooldown' period)
 
 ```
 $ sudo python3 ipmi-check-temperature.py --maxtemp 10 --email name1@server.com --email name2@server.com
