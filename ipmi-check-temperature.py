@@ -73,9 +73,7 @@ def run(*, max_temp, log_file, notify_file, notify_cooldown, notify_emails):
     LOG.info("Current temp is {} (max {})   [{}]".format(
         current_temp, max_temp, "WARNING" if warning_state else "OKAY"))
 
-    last_notification = 0
-    try:
-        last_notification = get_last_notification(notify_file)
+    last_notification = get_last_notification(notify_file)
     except IOError as err:
         LOG.warning(f"Caught IOError when getting last notification: {err}")
         pass
@@ -192,10 +190,13 @@ def get_temperature():
     return int(temp)
 
 def get_last_notification(notify_file):
-    """Returns when the last notification was sent"""
+    """Returns when the last notification was sent (sec since epoch)"""
 
-    notify_path = pathlib.Path(notify_file)
-    return notify_path.stat().st_mtime
+    try:
+        notify_path = pathlib.Path(notify_file)
+        return notify_path.stat().st_mtime
+    except IOError:
+        return 0
 
 
 def get_last_lines(log_file, line_count=5):
