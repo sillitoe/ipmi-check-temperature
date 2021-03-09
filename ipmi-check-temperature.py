@@ -28,7 +28,7 @@ IPMI_SDR_PREFIXES = [
 ]
 
 SMTP_PORT = 465
-EMAIL_HOST = 'localhost'
+SMTP_HOST = 'localhost'
 EMAIL_SUBJECT = "Temperature {current_temp} exceeds max (host: {hostname})"
 EMAIL_FROM = "{username}@{hostname}"
 EMAIL_TEMPLATE = """
@@ -133,7 +133,7 @@ def send_email_notification(*, log_file, notify_file, notify_emails, current_tem
     msg['To'] = ', '.join(notify_emails)
 
     LOG.info(f"Sending notification to {notify_emails}")
-    with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
         server.send_message(msg)
 
     LOG.info(f"Touching notify file {notify_file}")
