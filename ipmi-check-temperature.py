@@ -27,6 +27,7 @@ IPMI_SDR_PREFIXES = [
     'Ambient Temp',
 ]
 
+SMTP_PORT = 465
 EMAIL_HOST = 'localhost'
 EMAIL_SUBJECT = "Temperature {current_temp} exceeds max (host: {hostname})"
 EMAIL_FROM = "{username}@{hostname}"
@@ -75,8 +76,8 @@ def run(*, max_temp, log_file, notify_file, notify_cooldown, notify_emails):
     last_notification = 0
     try:
         last_notification = get_last_notification(notify_file)
-    except IOError:
-        LOG.warning("Caught IOError when getting last notification")
+    except IOError as err:
+        LOG.warning(f"Caught IOError when getting last notification: {err}")
         pass
 
     now = datetime.datetime.now()
@@ -137,8 +138,8 @@ def send_email_notification(*, log_file, notify_file, notify_emails, current_tem
     msg['To'] = ', '.join(notify_emails)
 
     LOG.info(f"Sending notification to {notify_emails}")
-    with smtplib.SMTP(EMAIL_HOST) as s:
-        s.send_message(msg)
+    with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+        server.send_message(msg)
 
     LOG.info(f"Touching notify file {notify_file}")
     pathlib.Path(notify_file).touch()
