@@ -74,9 +74,6 @@ def run(*, max_temp, log_file, notify_file, notify_cooldown, notify_emails):
         current_temp, max_temp, "WARNING" if warning_state else "OKAY"))
 
     last_notification = get_last_notification(notify_file)
-    except IOError as err:
-        LOG.warning(f"Caught IOError when getting last notification: {err}")
-        pass
 
     now = datetime.datetime.now()
     seconds_until_next_notification = notify_cooldown - (now.timestamp() - last_notification)
